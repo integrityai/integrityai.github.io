@@ -2,7 +2,7 @@ const Anthropic = require('@anthropic-ai/sdk')
 const { Ratelimit } = require('@upstash/ratelimit')
 const { Redis } = require('@upstash/redis')
 
-const SYSTEM_PROMPT = `You are a senior O&G maintenance and integrity engineer with deep expertise in compliance assessment. Perform a rigorous technical review.
+const SYSTEM_PROMPT = `You are a senior O&G maintenance and integrity engineer with deep expertise in compliance assessment. Perform a rigorous technical review of the submitted document.
 
 NORSOK Z-008 key requirements: criticality classification (consequence: safety/env/production x probability), defined maintenance concepts per class, performance standards for safety-critical items, FMECA or RCM-based task selection, justified frequencies/triggers, competence requirements, spare parts strategy linked to criticality, audit/review procedure.
 
@@ -10,10 +10,51 @@ ISO 14224 key requirements: taxonomy per Annex A hierarchy, equipment boundary d
 
 API 580/581 key requirements: PoF assessment with damage mechanisms, CoF assessment (safety+financial), risk matrix, inspection plans linked to risk, inspection technique selection rationale, risk acceptance criteria, risk re-evaluation triggers.
 
-Return ONLY valid JSON — no markdown, no preamble:
-{"score":integer,"summary":"max 2 sentences","compliant":["string array, max 5 items"],"critical":[{"gap":"string","fix":"string"}],"major":[{"gap":"string","fix":"string"}],"minor":[{"gap":"string","fix":"string"}],"recommendation":"1 actionable sentence"}
+Be technically precise and direct. Short/non-technical documents score 0-20.`
 
-Be technically precise and direct. Short/non-technical documents get score 0-20.`
+// Tool schema forces structured output — Anthropic guarantees valid JSON, no JSON.parse needed.
+const RESULT_TOOL = {
+  name: 'compliance_result',
+  description: 'Submit the structured compliance assessment result.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      score: { type: 'integer', description: 'Compliance score 0-100' },
+      summary: { type: 'string', description: 'Max 2 sentences summarising overall compliance level' },
+      compliant: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Up to 5 areas where the document meets requirements',
+      },
+      critical: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { gap: { type: 'string' }, fix: { type: 'string' } },
+          required: ['gap', 'fix'],
+        },
+      },
+      major: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { gap: { type: 'string' }, fix: { type: 'string' } },
+          required: ['gap', 'fix'],
+        },
+      },
+      minor: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { gap: { type: 'string' }, fix: { type: 'string' } },
+          required: ['gap', 'fix'],
+        },
+      },
+      recommendation: { type: 'string', description: '1 actionable sentence' },
+    },
+    required: ['score', 'summary', 'compliant', 'critical', 'major', 'minor', 'recommendation'],
+  },
+}
 
 const MIN_DOC = 30
 const MAX_DOC = 15000
@@ -71,20 +112,23 @@ module.exports = async function handler(req, res) {
     }
   }
 
+  console.log('[analyze] doc length:', document.length)
+
   try {
     const client = new Anthropic()
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1000,
+      max_tokens: 1500,
       system: SYSTEM_PROMPT,
+      tools: [RESULT_TOOL],
+      tool_choice: { type: 'tool', name: 'compliance_result' },
       messages: [{ role: 'user', content: 'Document to review:\n\n' + document }],
     })
 
-    const text = (message.content.find(b => b.type === 'text') || {}).text || ''
-    const clean = text.trim().replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim()
-    const parsed = JSON.parse(clean)
+    const toolUse = message.content.find(b => b.type === 'tool_use' && b.name === 'compliance_result')
+    if (!toolUse) throw new Error('Model did not return structured result')
 
-    return res.status(200).json(parsed)
+    return res.status(200).json(toolUse.input)
   } catch (err) {
     console.error('[analyze]', err.message)
     return res.status(500).json({ error: 'Analysis failed. Please try again.' })
