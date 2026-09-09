@@ -116,15 +116,17 @@ module.exports = async function handler(req, res) {
 
   try {
     const client = new Anthropic()
+    console.time('[analyze] anthropic')
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1500,
+      max_tokens: 800,
       system: SYSTEM_PROMPT,
       tools: [RESULT_TOOL],
       tool_choice: { type: 'tool', name: 'compliance_result' },
       messages: [{ role: 'user', content: 'Document to review:\n\n' + document }],
     })
 
+    console.timeEnd('[analyze] anthropic')
     const toolUse = message.content.find(b => b.type === 'tool_use' && b.name === 'compliance_result')
     if (!toolUse) throw new Error('Model did not return structured result')
 
