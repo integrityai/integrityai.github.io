@@ -119,17 +119,23 @@ module.exports = async function handler(req, res) {
     console.time('[analyze] anthropic')
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 800,
+      max_tokens: 1200,
       system: SYSTEM_PROMPT,
       tools: [RESULT_TOOL],
       tool_choice: { type: 'tool', name: 'compliance_result' },
       messages: [{ role: 'user', content: 'Document to review:\n\n' + document }],
     })
-
     console.timeEnd('[analyze] anthropic')
+
+    console.log('[analyze] stop_reason:', message.stop_reason)
+    if (message.stop_reason === 'max_tokens') {
+      throw new Error('Response was truncated — reduce document length or retry')
+    }
+
     const toolUse = message.content.find(b => b.type === 'tool_use' && b.name === 'compliance_result')
     if (!toolUse) throw new Error('Model did not return structured result')
 
+    console.log('[analyze] tool result:', JSON.stringify(toolUse.input))
     return res.status(200).json(toolUse.input)
   } catch (err) {
     console.error('[analyze]', err.message)
