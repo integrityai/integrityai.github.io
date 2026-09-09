@@ -186,6 +186,8 @@
 </div>
 
 <script>
+const API_URL = 'https://integrityai.vercel.app/api/analyze';
+
 const SAMPLE_DOC = `MAINTENANCE STRATEGY DOCUMENT — WELLHEAD COMPRESSION SYSTEM
 
 1. SCOPE
@@ -205,19 +207,6 @@ Corrective maintenance to be performed upon failure. Spare parts available in wa
 
 5. SAFETY
 Personnel must follow PTW system before maintenance activities.`;
-
-const SYSTEM_PROMPT = `You are a senior O&G maintenance and integrity engineer with deep expertise in compliance assessment. Perform a rigorous technical review.
-
-NORSOK Z-008 key requirements: criticality classification (consequence: safety/env/production x probability), defined maintenance concepts per class, performance standards for safety-critical items, FMECA or RCM-based task selection, justified frequencies/triggers, competence requirements, spare parts strategy linked to criticality, audit/review procedure.
-
-ISO 14224 key requirements: taxonomy per Annex A hierarchy, equipment boundary definitions, standard failure modes per class, failure mechanism classification, active repair time categories, mandatory data fields, event classification (failure/malfunction/anomaly).
-
-API 580/581 key requirements: PoF assessment with damage mechanisms, CoF assessment (safety+financial), risk matrix, inspection plans linked to risk, inspection technique selection rationale, risk acceptance criteria, risk re-evaluation triggers.
-
-Return ONLY valid JSON — no markdown, no preamble:
-{"score":integer,"summary":"max 2 sentences","compliant":["string array, max 5 items"],"critical":[{"gap":"string","fix":"string"}],"major":[{"gap":"string","fix":"string"}],"minor":[{"gap":"string","fix":"string"}],"recommendation":"1 actionable sentence"}
-
-Be technically precise and direct. Short/non-technical documents get score 0-20.`;
 
 const docInput = document.getElementById('docInput');
 const charCount = document.getElementById('charCount');
@@ -260,28 +249,23 @@ analyzeBtn.onclick = async () => {
   resultBox.classList.remove('show');
 
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1000,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: "Document to review:\n\n" + doc }]
-      })
+      body: JSON.stringify({ document: doc })
     });
-    const data = await response.json();
-    const textBlock = (data.content || []).find(b => b.type === 'text');
-    if (!textBlock) throw new Error('No response from analysis engine.');
-    let clean = textBlock.text.trim().replace(/^```json/i, '').replace(/```$/,'').trim();
-    const parsed = JSON.parse(clean);
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Analysis failed. Please try again.');
+    }
+    const parsed = await response.json();
     currentResult = parsed;
     renderResult(parsed);
   } catch (err) {
     console.error(err);
     errorBox.style.display = 'block';
     errorBox.className = 'error-box';
-    errorBox.textContent = 'Something went wrong running the analysis. Please try again in a moment.';
+    errorBox.textContent = err.message || 'Something went wrong running the analysis. Please try again in a moment.';
   } finally {
     analyzeBtn.disabled = false;
     analyzeBtn.textContent = 'RUN COMPLIANCE CHECK';
