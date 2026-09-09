@@ -10,7 +10,8 @@ ISO 14224 key requirements: taxonomy per Annex A hierarchy, equipment boundary d
 
 API 580/581 key requirements: PoF assessment with damage mechanisms, CoF assessment (safety+financial), risk matrix, inspection plans linked to risk, inspection technique selection rationale, risk acceptance criteria, risk re-evaluation triggers.
 
-Be technically precise and direct. Short/non-technical documents score 0-20.`
+Be technically precise and direct. Short/non-technical documents score 0-20.
+Each "gap" and "fix" field must be one sentence maximum. "summary" max 2 sentences. "recommendation" max 1 sentence.`
 
 // Tool schema forces structured output — Anthropic guarantees valid JSON, no JSON.parse needed.
 const RESULT_TOOL = {
@@ -119,7 +120,7 @@ module.exports = async function handler(req, res) {
     console.time('[analyze] anthropic')
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1200,
+      max_tokens: 4000,
       system: SYSTEM_PROMPT,
       tools: [RESULT_TOOL],
       tool_choice: { type: 'tool', name: 'compliance_result' },
